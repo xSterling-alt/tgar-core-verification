@@ -1,3 +1,12 @@
+// ============================================================
+// TGAR CORE — ROBLOX VERIFICATION SERVICE
+// ============================================================
+
+
+// ------------------------------------------------------------
+// Environment variables
+// ------------------------------------------------------------
+
 const ROBLOX_CLIENT_ID = requireEnv("ROBLOX_CLIENT_ID");
 const ROBLOX_CLIENT_SECRET = requireEnv("ROBLOX_CLIENT_SECRET");
 const ROBLOX_REDIRECT_URI = requireEnv("ROBLOX_REDIRECT_URI");
@@ -25,6 +34,10 @@ const VERIFICATION_ROLE_IDS = requireEnv(
 const STATE_SECRET = requireEnv("STATE_SECRET");
 
 
+// ------------------------------------------------------------
+// API endpoints
+// ------------------------------------------------------------
+
 const ROBLOX_TOKEN_URL =
   "https://apis.roblox.com/oauth/v1/token";
 
@@ -34,6 +47,10 @@ const ROBLOX_USERINFO_URL =
 const DISCORD_API =
   "https://discord.com/api/v10";
 
+
+// ============================================================
+// Types
+// ============================================================
 
 interface VerificationState {
   discord_user_id: string;
@@ -58,6 +75,7 @@ interface RobloxGroupRole {
     id: number;
     name?: string;
   };
+
   role: {
     id: number;
     name: string;
@@ -68,6 +86,7 @@ interface RobloxGroupRole {
 
 interface DiscordMember {
   roles: string[];
+
   user?: {
     id: string;
     username?: string;
@@ -83,10 +102,16 @@ interface DiscordRole {
 }
 
 
+// ============================================================
+// Environment helper
+// ============================================================
+
 function requireEnv(
   name: string,
 ): string {
-  const value = Deno.env.get(name)?.trim();
+
+  const value =
+    Deno.env.get(name)?.trim();
 
   if (!value) {
     throw new Error(
@@ -98,145 +123,191 @@ function requireEnv(
 }
 
 
+// ============================================================
+// HTML response
+// ============================================================
+
 function htmlResponse(
   title: string,
   message: string,
   success = false,
   status = 200,
 ): Response {
-  const accent = success
-    ? "#57F287"
-    : "#ED4245";
 
-  const icon = success
-    ? "✓"
-    : "✕";
+  const accent =
+    success
+      ? "#57F287"
+      : "#ED4245";
+
+  const icon =
+    success
+      ? "✓"
+      : "✕";
 
   const html = `
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
-  >
-  <title>${escapeHtml(title)}</title>
 
-  <style>
-    * {
-      box-sizing: border-box;
-    }
+<meta charset="UTF-8">
 
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
 
-      background:
-        radial-gradient(
-          circle at top,
-          #172554,
-          #080B12 55%
-        );
+<title>${escapeHtml(title)}</title>
 
-      color: #F2F3F5;
+<style>
 
-      font-family:
-        Inter,
-        Arial,
-        Helvetica,
-        sans-serif;
-    }
+* {
+  box-sizing: border-box;
+}
 
-    .card {
-      width: 100%;
-      max-width: 560px;
+body {
 
-      padding: 38px;
+  margin: 0;
 
-      background: #11141C;
+  min-height: 100vh;
 
-      border: 1px solid #252936;
-      border-radius: 18px;
+  display: flex;
 
-      box-shadow:
-        0 20px 60px
-        rgba(0, 0, 0, 0.45);
+  align-items: center;
 
-      text-align: center;
-    }
+  justify-content: center;
 
-    .icon {
-      width: 64px;
-      height: 64px;
+  padding: 24px;
 
-      margin:
-        0 auto
-        22px auto;
+  background:
+    radial-gradient(
+      circle at top,
+      #172554,
+      #080B12 55%
+    );
 
-      display: flex;
-      align-items: center;
-      justify-content: center;
+  color: #F2F3F5;
 
-      border-radius: 50%;
+  font-family:
+    Inter,
+    Arial,
+    Helvetica,
+    sans-serif;
+}
 
-      background: ${accent};
-      color: #0A0C11;
 
-      font-size: 34px;
-      font-weight: 900;
-    }
+.card {
 
-    h1 {
-      margin:
-        0 0
-        14px 0;
+  width: 100%;
 
-      font-size: 28px;
-    }
+  max-width: 560px;
 
-    p {
-      margin: 0;
+  padding: 38px;
 
-      color: #B5BAC1;
+  background: #11141C;
 
-      font-size: 16px;
-      line-height: 1.6;
-    }
+  border:
+    1px solid #252936;
 
-    .brand {
-      margin-top: 30px;
+  border-radius: 18px;
 
-      color: #72767D;
+  box-shadow:
+    0 20px 60px
+    rgba(0, 0, 0, 0.45);
 
-      font-size: 13px;
-    }
-  </style>
+  text-align: center;
+}
+
+
+.icon {
+
+  width: 64px;
+
+  height: 64px;
+
+  margin:
+    0 auto
+    22px auto;
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background: ${accent};
+
+  color: #0A0C11;
+
+  font-size: 34px;
+
+  font-weight: 900;
+}
+
+
+h1 {
+
+  margin:
+    0 0
+    14px 0;
+
+  font-size: 28px;
+}
+
+
+p {
+
+  margin: 0;
+
+  color: #B5BAC1;
+
+  font-size: 16px;
+
+  line-height: 1.6;
+}
+
+
+.brand {
+
+  margin-top: 30px;
+
+  color: #72767D;
+
+  font-size: 13px;
+}
+
+</style>
+
 </head>
 
+
 <body>
-  <main class="card">
-    <div class="icon">
-      ${icon}
-    </div>
 
-    <h1>
-      ${escapeHtml(title)}
-    </h1>
+<main class="card">
 
-    <p>
-      ${escapeHtml(message)}
-    </p>
+<div class="icon">
+${icon}
+</div>
 
-    <div class="brand">
-      TGAR Core • Verification System
-    </div>
-  </main>
+<h1>
+${escapeHtml(title)}
+</h1>
+
+<p>
+${escapeHtml(message)}
+</p>
+
+<div class="brand">
+TGAR Core • Verification System
+</div>
+
+</main>
+
 </body>
+
 </html>
 `;
 
@@ -244,7 +315,9 @@ function htmlResponse(
     html,
     {
       status,
+
       headers: {
+
         "content-type":
           "text/html; charset=utf-8",
 
@@ -256,9 +329,14 @@ function htmlResponse(
 }
 
 
+// ============================================================
+// HTML escaping
+// ============================================================
+
 function escapeHtml(
   value: string,
 ): string {
+
   return value
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
@@ -268,12 +346,18 @@ function escapeHtml(
 }
 
 
+// ============================================================
+// Base64 URL decoding
+// ============================================================
+
 function base64UrlToBytes(
   value: string,
 ): Uint8Array {
-  let normalized = value
-    .replaceAll("-", "+")
-    .replaceAll("_", "/");
+
+  let normalized =
+    value
+      .replaceAll("-", "+")
+      .replaceAll("_", "/");
 
   while (
     normalized.length % 4 !== 0
@@ -281,9 +365,8 @@ function base64UrlToBytes(
     normalized += "=";
   }
 
-  const decoded = atob(
-    normalized,
-  );
+  const decoded =
+    atob(normalized);
 
   return Uint8Array.from(
     decoded,
@@ -296,6 +379,7 @@ function base64UrlToBytes(
 function decodeBase64UrlText(
   value: string,
 ): string {
+
   return new TextDecoder().decode(
     base64UrlToBytes(
       value,
@@ -304,9 +388,15 @@ function decodeBase64UrlText(
 }
 
 
+// ============================================================
+// State verification
+// ============================================================
+
 async function getStateKey():
   Promise<CryptoKey> {
+
   return await crypto.subtle.importKey(
+
     "raw",
 
     new TextEncoder().encode(
@@ -330,6 +420,7 @@ async function getStateKey():
 async function verifyState(
   stateValue: string,
 ): Promise<VerificationState | null> {
+
   const parts =
     stateValue.split(".");
 
@@ -339,28 +430,37 @@ async function verifyState(
     return null;
   }
 
+
   const [
     payloadPart,
     signaturePart,
   ] = parts;
 
+
   let signatureBytes:
     Uint8Array;
 
+
   try {
+
     signatureBytes =
       base64UrlToBytes(
         signaturePart,
       );
+
   } catch {
+
     return null;
   }
+
 
   const key =
     await getStateKey();
 
+
   const validSignature =
     await crypto.subtle.verify(
+
       "HMAC",
 
       key,
@@ -372,94 +472,123 @@ async function verifyState(
       ),
     );
 
+
   if (!validSignature) {
     return null;
   }
 
+
   let state:
     VerificationState;
 
+
   try {
-    state = JSON.parse(
-      decodeBase64UrlText(
-        payloadPart,
-      ),
-    );
+
+    state =
+      JSON.parse(
+        decodeBase64UrlText(
+          payloadPart,
+        ),
+      );
+
   } catch {
+
     return null;
   }
 
+
   if (
-    typeof state.discord_user_id
-      !== "string"
+    typeof state.discord_user_id !== "string"
     ||
-    typeof state.channel_id
-      !== "string"
+    typeof state.channel_id !== "string"
     ||
-    typeof state.exp
-      !== "number"
+    typeof state.exp !== "number"
     ||
-    typeof state.nonce
-      !== "string"
+    typeof state.nonce !== "string"
   ) {
+
     return null;
   }
+
 
   const currentTime =
     Math.floor(
       Date.now() / 1000,
     );
 
+
   if (
     state.exp < currentTime
   ) {
+
     return null;
   }
+
 
   if (
     state.channel_id
       !== VERIFICATION_CHANNEL_ID
   ) {
+
     return null;
   }
+
 
   return state;
 }
 
 
+// ============================================================
+// Roblox OAuth
+// ============================================================
+
 async function exchangeRobloxCode(
   code: string,
 ): Promise<string> {
+
   const body =
     new URLSearchParams();
+
 
   body.set(
     "client_id",
     ROBLOX_CLIENT_ID,
   );
 
+
   body.set(
     "client_secret",
     ROBLOX_CLIENT_SECRET,
   );
+
 
   body.set(
     "grant_type",
     "authorization_code",
   );
 
+
   body.set(
     "code",
     code,
   );
 
+
+  body.set(
+    "redirect_uri",
+    ROBLOX_REDIRECT_URI,
+  );
+
+
   const response =
     await fetch(
       ROBLOX_TOKEN_URL,
       {
+
         method: "POST",
 
         headers: {
+
           "content-type":
             "application/x-www-form-urlencoded",
         },
@@ -468,9 +597,12 @@ async function exchangeRobloxCode(
       },
     );
 
+
   if (!response.ok) {
+
     const errorText =
       await response.text();
+
 
     console.error(
       "Roblox token exchange failed:",
@@ -478,49 +610,64 @@ async function exchangeRobloxCode(
       errorText,
     );
 
+
     throw new Error(
       "Roblox authorization code could not be exchanged.",
     );
   }
 
+
   const data =
     await response.json();
+
 
   const accessToken =
     data.access_token;
 
+
   if (
-    typeof accessToken
-      !== "string"
+    typeof accessToken !== "string"
     ||
     !accessToken
   ) {
+
     throw new Error(
       "Roblox did not return an access token.",
     );
   }
 
+
   return accessToken;
 }
 
 
+// ============================================================
+// Roblox user
+// ============================================================
+
 async function getRobloxUser(
   accessToken: string,
 ): Promise<RobloxUserInfo> {
+
   const response =
     await fetch(
       ROBLOX_USERINFO_URL,
       {
+
         headers: {
+
           authorization:
             `Bearer ${accessToken}`,
         },
       },
     );
 
+
   if (!response.ok) {
+
     const errorText =
       await response.text();
+
 
     console.error(
       "Roblox userinfo failed:",
@@ -528,30 +675,39 @@ async function getRobloxUser(
       errorText,
     );
 
+
     throw new Error(
       "Roblox account information could not be loaded.",
     );
   }
 
+
   const data =
     await response.json();
 
+
   if (
-    typeof data.sub
-      !== "string"
+    typeof data.sub !== "string"
   ) {
+
     throw new Error(
       "Roblox returned an invalid user ID.",
     );
   }
 
+
   return data;
 }
 
 
+// ============================================================
+// Roblox TGAR membership
+// ============================================================
+
 async function getRobloxGroupMembership(
   robloxUserId: string,
 ): Promise<RobloxGroupRole | null> {
+
   const url =
     `https://groups.roblox.com/v1/users/${
       encodeURIComponent(
@@ -559,20 +715,26 @@ async function getRobloxGroupMembership(
       )
     }/groups/roles`;
 
+
   const response =
     await fetch(
       url,
       {
+
         headers: {
+
           accept:
             "application/json",
         },
       },
     );
 
+
   if (!response.ok) {
+
     const errorText =
       await response.text();
+
 
     console.error(
       "Roblox group lookup failed:",
@@ -580,26 +742,32 @@ async function getRobloxGroupMembership(
       errorText,
     );
 
+
     throw new Error(
       "TGAR group membership could not be checked.",
     );
   }
 
+
   const data =
     await response.json();
+
 
   if (
     !Array.isArray(
       data.data,
     )
   ) {
+
     return null;
   }
+
 
   const targetGroupId =
     Number(
       TGAR_GROUP_ID,
     );
+
 
   const membership =
     data.data.find(
@@ -610,16 +778,23 @@ async function getRobloxGroupMembership(
         Number(
           entry?.group?.id,
         )
-          === targetGroupId,
+        === targetGroupId,
     );
+
 
   return membership ?? null;
 }
 
 
+// ============================================================
+// Discord API
+// ============================================================
+
 function discordHeaders():
   HeadersInit {
+
   return {
+
     authorization:
       `Bot ${DISCORD_BOT_TOKEN}`,
 
@@ -638,16 +813,20 @@ async function discordRequest(
   path: string,
   options: RequestInit = {},
 ): Promise<Response> {
+
   const headers =
     new Headers(
       discordHeaders(),
     );
 
+
   if (options.headers) {
+
     const extraHeaders =
       new Headers(
         options.headers,
       );
+
 
     for (
       const [
@@ -655,6 +834,7 @@ async function discordRequest(
         value,
       ] of extraHeaders
     ) {
+
       headers.set(
         key,
         value,
@@ -662,19 +842,38 @@ async function discordRequest(
     }
   }
 
+
   return await fetch(
     `${DISCORD_API}${path}`,
     {
+
       ...options,
+
       headers,
     },
   );
 }
 
 
+// ============================================================
+// Discord member lookup
+// ============================================================
+
 async function getDiscordMember(
   discordUserId: string,
 ): Promise<DiscordMember> {
+
+  console.log(
+    "Discord member lookup started:",
+    {
+      guildId:
+        DISCORD_GUILD_ID,
+
+      discordUserId,
+    },
+  );
+
+
   const response =
     await discordRequest(
       `/guilds/${
@@ -684,18 +883,100 @@ async function getDiscordMember(
       }`,
     );
 
+
   if (!response.ok) {
+
+    const errorText =
+      await response.text();
+
+
+    console.error(
+      "Discord member lookup failed:",
+      {
+        status:
+          response.status,
+
+        statusText:
+          response.statusText,
+
+        guildId:
+          DISCORD_GUILD_ID,
+
+        discordUserId,
+
+        response:
+          errorText,
+      },
+    );
+
+
+    if (
+      response.status === 401
+    ) {
+
+      throw new Error(
+        "Discord rejected the bot token.",
+      );
+    }
+
+
+    if (
+      response.status === 403
+    ) {
+
+      throw new Error(
+        "TGAR Core does not have permission to access this Discord server.",
+      );
+    }
+
+
+    if (
+      response.status === 404
+    ) {
+
+      throw new Error(
+        "Discord could not find the configured server or member.",
+      );
+    }
+
+
     throw new Error(
-      "Your Discord membership could not be found.",
+      `Discord member lookup failed with HTTP ${response.status}.`,
     );
   }
 
-  return await response.json();
+
+  const member =
+    await response.json();
+
+
+  console.log(
+    "Discord member found:",
+    {
+      discordUserId,
+
+      username:
+        member?.user?.username
+        ?? "Unknown",
+
+      roles:
+        member?.roles
+        ?? [],
+    },
+  );
+
+
+  return member;
 }
 
 
+// ============================================================
+// Discord roles
+// ============================================================
+
 async function getDiscordRoles():
   Promise<DiscordRole[]> {
+
   const response =
     await discordRequest(
       `/guilds/${
@@ -703,20 +984,39 @@ async function getDiscordRoles():
       }/roles`,
     );
 
+
   if (!response.ok) {
+
+    const errorText =
+      await response.text();
+
+
+    console.error(
+      "Discord role lookup failed:",
+      response.status,
+      errorText,
+    );
+
+
     throw new Error(
       "Discord roles could not be loaded.",
     );
   }
 
+
   return await response.json();
 }
 
+
+// ============================================================
+// Add role
+// ============================================================
 
 async function addDiscordRole(
   discordUserId: string,
   roleId: string,
 ): Promise<void> {
+
   const response =
     await discordRequest(
       `/guilds/${
@@ -726,25 +1026,29 @@ async function addDiscordRole(
       }/roles/${
         roleId
       }`,
-
       {
+
         method: "PUT",
       },
     );
+
 
   if (
     !response.ok
     &&
     response.status !== 204
   ) {
+
     const errorText =
       await response.text();
+
 
     console.error(
       `Failed to add role ${roleId}:`,
       response.status,
       errorText,
     );
+
 
     throw new Error(
       "One or more required Discord roles could not be added.",
@@ -753,10 +1057,15 @@ async function addDiscordRole(
 }
 
 
+// ============================================================
+// Remove role
+// ============================================================
+
 async function removeDiscordRole(
   discordUserId: string,
   roleId: string,
 ): Promise<boolean> {
+
   const response =
     await discordRequest(
       `/guilds/${
@@ -766,22 +1075,26 @@ async function removeDiscordRole(
       }/roles/${
         roleId
       }`,
-
       {
+
         method: "DELETE",
       },
     );
+
 
   if (
     response.ok
     ||
     response.status === 204
   ) {
+
     return true;
   }
 
+
   const errorText =
     await response.text();
+
 
   console.warn(
     `Could not remove role ${roleId}:`,
@@ -789,19 +1102,26 @@ async function removeDiscordRole(
     errorText,
   );
 
+
   return false;
 }
 
+
+// ============================================================
+// Nickname
+// ============================================================
 
 async function setDiscordNickname(
   discordUserId: string,
   nickname: string,
 ): Promise<void> {
+
   const safeNickname =
     nickname.slice(
       0,
       32,
     );
+
 
   const response =
     await discordRequest(
@@ -810,28 +1130,33 @@ async function setDiscordNickname(
       }/members/${
         discordUserId
       }`,
-
       {
+
         method: "PATCH",
 
-        body: JSON.stringify(
-          {
-            nick:
-              safeNickname,
-          },
-        ),
+        body:
+          JSON.stringify(
+            {
+              nick:
+                safeNickname,
+            },
+          ),
       },
     );
 
+
   if (!response.ok) {
+
     const errorText =
       await response.text();
+
 
     console.error(
       "Nickname update failed:",
       response.status,
       errorText,
     );
+
 
     throw new Error(
       "Your Discord nickname could not be updated.",
@@ -840,12 +1165,18 @@ async function setDiscordNickname(
 }
 
 
+// ============================================================
+// Update roles
+// ============================================================
+
 async function updateDiscordRoles(
   discordUserId: string,
   member: DiscordMember,
 ): Promise<void> {
+
   const guildRoles =
     await getDiscordRoles();
+
 
   const roleById =
     new Map(
@@ -857,36 +1188,48 @@ async function updateDiscordRoles(
       ),
     );
 
+
   const desiredRoles =
     new Set(
       VERIFICATION_ROLE_IDS,
     );
 
+
+  // ----------------------------------------------------------
+  // Remove old removable roles
+  // ----------------------------------------------------------
+
   for (
     const currentRoleId
     of member.roles
   ) {
+
     if (
       desiredRoles.has(
         currentRoleId,
       )
     ) {
+
       continue;
     }
+
 
     const role =
       roleById.get(
         currentRoleId,
       );
 
+
     if (!role) {
       continue;
     }
 
-    // Discord-managed roles cannot be manually removed.
+
+    // Bot/integration managed roles cannot be removed manually.
     if (role.managed) {
       continue;
     }
+
 
     await removeDiscordRole(
       discordUserId,
@@ -894,17 +1237,27 @@ async function updateDiscordRoles(
     );
   }
 
+
+  // ----------------------------------------------------------
+  // Add verified roles
+  // ----------------------------------------------------------
+
   for (
     const roleId
     of VERIFICATION_ROLE_IDS
   ) {
+
     await addDiscordRole(
       discordUserId,
       roleId,
     );
   }
 
-  // Explicitly ensure Unverified is removed.
+
+  // ----------------------------------------------------------
+  // Ensure Unverified is removed
+  // ----------------------------------------------------------
+
   await removeDiscordRole(
     discordUserId,
     UNVERIFIED_ROLE_ID,
@@ -912,20 +1265,46 @@ async function updateDiscordRoles(
 }
 
 
+// ============================================================
+// Delay helper
+// ============================================================
+
+function sleep(
+  milliseconds: number,
+): Promise<void> {
+
+  return new Promise(
+    (resolve) =>
+      setTimeout(
+        resolve,
+        milliseconds,
+      ),
+  );
+}
+
+
+// ============================================================
+// Roblox callback
+// ============================================================
+
 async function handleCallback(
   request: Request,
 ): Promise<Response> {
+
   const url =
     new URL(
       request.url,
     );
+
 
   const oauthError =
     url.searchParams.get(
       "error",
     );
 
+
   if (oauthError) {
+
     return htmlResponse(
       "Verification Cancelled",
       "Roblox authorization was cancelled or denied. You may return to Discord and run /verify again.",
@@ -934,21 +1313,25 @@ async function handleCallback(
     );
   }
 
+
   const code =
     url.searchParams.get(
       "code",
     );
+
 
   const stateValue =
     url.searchParams.get(
       "state",
     );
 
+
   if (
     !code
     ||
     !stateValue
   ) {
+
     return htmlResponse(
       "Invalid Verification",
       "The verification request is missing required information. Please return to Discord and run /verify again.",
@@ -957,12 +1340,15 @@ async function handleCallback(
     );
   }
 
+
   const state =
     await verifyState(
       stateValue,
     );
 
+
   if (!state) {
+
     return htmlResponse(
       "Verification Expired",
       "This verification link is invalid or has expired. Please return to Discord and run /verify again.",
@@ -971,17 +1357,37 @@ async function handleCallback(
     );
   }
 
+
+  console.log(
+    "Verification callback received:",
+    {
+      discordUserId:
+        state.discord_user_id,
+
+      channelId:
+        state.channel_id,
+    },
+  );
+
+
   try {
+
+    // --------------------------------------------------------
+    // Discord member
+    // --------------------------------------------------------
+
     const discordMember =
       await getDiscordMember(
         state.discord_user_id,
       );
+
 
     if (
       !discordMember.roles.includes(
         UNVERIFIED_ROLE_ID,
       )
     ) {
+
       return htmlResponse(
         "Already Verified",
         "Your Discord account is no longer marked as Unverified.",
@@ -990,22 +1396,54 @@ async function handleCallback(
       );
     }
 
+
+    // --------------------------------------------------------
+    // Exchange Roblox OAuth code
+    // --------------------------------------------------------
+
     const accessToken =
       await exchangeRobloxCode(
         code,
       );
+
+
+    // --------------------------------------------------------
+    // Get Roblox user
+    // --------------------------------------------------------
 
     const robloxUser =
       await getRobloxUser(
         accessToken,
       );
 
+
+    console.log(
+      "Roblox user loaded:",
+      {
+        robloxUserId:
+          robloxUser.sub,
+
+        username:
+          robloxUser.preferred_username
+          ?? robloxUser.nickname
+          ?? robloxUser.name
+          ?? "Unknown",
+      },
+    );
+
+
+    // --------------------------------------------------------
+    // Check TGAR membership
+    // --------------------------------------------------------
+
     const membership =
       await getRobloxGroupMembership(
         robloxUser.sub,
       );
 
+
     if (!membership) {
+
       return htmlResponse(
         "TGAR Membership Required",
         "Your Roblox account is not currently a member of the Grand Army TGAR group. Join the group first, then return to Discord and run /verify again.",
@@ -1014,26 +1452,83 @@ async function handleCallback(
       );
     }
 
+
     const robloxUsername =
       robloxUser.preferred_username
       ?? robloxUser.nickname
       ?? robloxUser.name;
 
+
     if (!robloxUsername) {
+
       throw new Error(
         "Roblox did not provide a username.",
       );
     }
+
+
+    console.log(
+      "Roblox verification successful:",
+      {
+        robloxUsername,
+
+        robloxUserId:
+          robloxUser.sub,
+
+        tgarRole:
+          membership.role?.name
+          ?? "Unknown",
+      },
+    );
+
+
+    // --------------------------------------------------------
+    // Wait 10 seconds before changing Discord account
+    // --------------------------------------------------------
+
+    console.log(
+      "Waiting 10 seconds before applying Discord verification...",
+    );
+
+
+    await sleep(
+      10_000,
+    );
+
+
+    // --------------------------------------------------------
+    // Roles
+    // --------------------------------------------------------
+
+    console.log(
+      "Updating Discord roles...",
+    );
+
 
     await updateDiscordRoles(
       state.discord_user_id,
       discordMember,
     );
 
+
+    // --------------------------------------------------------
+    // Nickname
+    // --------------------------------------------------------
+
+    console.log(
+      "Updating Discord nickname...",
+    );
+
+
     await setDiscordNickname(
       state.discord_user_id,
       robloxUsername,
     );
+
+
+    // --------------------------------------------------------
+    // Complete
+    // --------------------------------------------------------
 
     console.log(
       "Verification completed:",
@@ -1052,17 +1547,45 @@ async function handleCallback(
       },
     );
 
+
     return htmlResponse(
       "Verification Complete",
       `Successfully verified as ${robloxUsername}. Your Discord roles and nickname have been updated. You may now return to Discord.`,
       true,
       200,
     );
+
   } catch (error) {
+
     console.error(
       "Verification failed:",
       error,
     );
+
+
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : String(error);
+
+
+    console.error(
+      "Verification failure details:",
+      {
+        discordUserId:
+          state.discord_user_id,
+
+        guildId:
+          DISCORD_GUILD_ID,
+
+        channelId:
+          state.channel_id,
+
+        error:
+          errorMessage,
+      },
+    );
+
 
     return htmlResponse(
       "Verification Failed",
@@ -1074,43 +1597,64 @@ async function handleCallback(
 }
 
 
+// ============================================================
+// HTTP server
+// ============================================================
+
 Deno.serve(
+
   async (
     request: Request,
   ): Promise<Response> => {
+
     const url =
       new URL(
         request.url,
       );
+
+
+    // --------------------------------------------------------
+    // Roblox OAuth callback
+    // --------------------------------------------------------
 
     if (
       request.method === "GET"
       &&
       url.pathname === "/callback"
     ) {
+
       return await handleCallback(
         request,
       );
     }
+
+
+    // --------------------------------------------------------
+    // Health check
+    // --------------------------------------------------------
 
     if (
       request.method === "GET"
       &&
       url.pathname === "/health"
     ) {
+
       return new Response(
         JSON.stringify(
           {
-            status: "ok",
+            status:
+              "ok",
+
             service:
               "TGAR Core Verification",
           },
         ),
-
         {
+
           status: 200,
 
           headers: {
+
             "content-type":
               "application/json; charset=utf-8",
 
@@ -1120,6 +1664,11 @@ Deno.serve(
         },
       );
     }
+
+
+    // --------------------------------------------------------
+    // Homepage
+    // --------------------------------------------------------
 
     return htmlResponse(
       "TGAR Core Verification",
