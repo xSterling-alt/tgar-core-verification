@@ -24,14 +24,87 @@ const UNVERIFIED_ROLE_ID = requireEnv(
   "UNVERIFIED_ROLE_ID",
 );
 
-const VERIFICATION_ROLE_IDS = requireEnv(
-  "VERIFICATION_ROLE_IDS",
-)
-  .split(",")
-  .map((roleId) => roleId.trim())
-  .filter(Boolean);
+const STATE_SECRET = requireEnv(
+  "STATE_SECRET",
+);
 
-const STATE_SECRET = requireEnv("STATE_SECRET");
+
+// ------------------------------------------------------------
+// Verification roles
+// ------------------------------------------------------------
+
+// These roles are given to every successfully verified
+// Enlisted TGAR member.
+
+const VERIFIED_ENLISTED_BASE_ROLE_IDS = [
+  "1470567885448413265", // Verified
+  "1470567885448413267", // Grand Army of the Republic
+  "1470567885448413269", // Basic
+  "1470567885486293214", // Enlisted
+  "1470567885427708119", // pings
+  "1531335965287649452", // Community Ping
+  "1470567885427708118", // Tryout Ping
+  "1533839167878987816", // Events Ping
+  "1547020811146363010", // Content Ping
+];
+
+
+// ------------------------------------------------------------
+// Exact Roblox rank -> Discord role mapping
+// ------------------------------------------------------------
+
+// IMPORTANT:
+//
+// There is deliberately NO fallback.
+//
+// A Roblox rank must exactly match one of the names below.
+// Otherwise verification stops before Discord roles are changed.
+
+const ROBLOX_ENLISTED_RANK_ROLES:
+  Record<string, string> = {
+
+  "Cadet":
+    "1470567885448413270",
+
+  "Trooper":
+    "1470567885448413271",
+
+  "Specialist":
+    "1470567885448413272",
+
+  "Lance Corporal":
+    "1470567885448413273",
+
+  "Corporal":
+    "1470567885448413274",
+
+  "Sergeant":
+    "1470567885478035597",
+
+  "Staff Sergeant":
+    "1470567885478035600",
+
+  "Sergeant First Class":
+    "1470567885478035598",
+
+  "Master Sergeant":
+    "1470567885478035601",
+
+  "Sergeant Major":
+    "1547023213362417674",
+
+  "Command Sergeant Major":
+    "1470567885478035602",
+
+  "Warrant Officer":
+    "1470567885478035604",
+
+  "Upper Warrant Officer":
+    "1470567885478035605",
+
+  "Chief Warrant Officer":
+    "1470567885478035606",
+};
 
 
 // ------------------------------------------------------------
@@ -196,7 +269,6 @@ body {
     sans-serif;
 }
 
-
 .card {
 
   width: 100%;
@@ -218,7 +290,6 @@ body {
 
   text-align: center;
 }
-
 
 .icon {
 
@@ -247,7 +318,6 @@ body {
   font-weight: 900;
 }
 
-
 h1 {
 
   margin:
@@ -256,7 +326,6 @@ h1 {
 
   font-size: 28px;
 }
-
 
 p {
 
@@ -268,7 +337,6 @@ p {
 
   line-height: 1.6;
 }
-
 
 .brand {
 
@@ -787,6 +855,23 @@ async function getRobloxGroupMembership(
 
 
 // ============================================================
+// Exact Enlisted rank mapping
+// ============================================================
+
+function getDiscordRankRoleId(
+  robloxRankName: string,
+): string | null {
+
+  return (
+    ROBLOX_ENLISTED_RANK_ROLES[
+      robloxRankName
+    ]
+    ?? null
+  );
+}
+
+
+// ============================================================
 // Discord API
 // ============================================================
 
@@ -1172,6 +1257,7 @@ async function setDiscordNickname(
 async function updateDiscordRoles(
   discordUserId: string,
   member: DiscordMember,
+  rankRoleId: string,
 ): Promise<void> {
 
   const guildRoles =
@@ -1190,8 +1276,11 @@ async function updateDiscordRoles(
 
 
   const desiredRoles =
-    new Set(
-      VERIFICATION_ROLE_IDS,
+    new Set<string>(
+      [
+        ...VERIFIED_ENLISTED_BASE_ROLE_IDS,
+        rankRoleId,
+      ],
     );
 
 
@@ -1239,12 +1328,12 @@ async function updateDiscordRoles(
 
 
   // ----------------------------------------------------------
-  // Add verified roles
+  // Add verified base roles
   // ----------------------------------------------------------
 
   for (
     const roleId
-    of VERIFICATION_ROLE_IDS
+    of VERIFIED_ENLISTED_BASE_ROLE_IDS
   ) {
 
     await addDiscordRole(
@@ -1252,6 +1341,16 @@ async function updateDiscordRoles(
       roleId,
     );
   }
+
+
+  // ----------------------------------------------------------
+  // Add EXACT matching Enlisted rank role
+  // ----------------------------------------------------------
+
+  await addDiscordRole(
+    discordUserId,
+    rankRoleId,
+  );
 
 
   // ----------------------------------------------------------
@@ -1453,6 +1552,54 @@ async function handleCallback(
     }
 
 
+    // --------------------------------------------------------
+    // Exact TGAR rank
+    // --------------------------------------------------------
+
+    const robloxRank =
+      membership.role?.name?.trim();
+
+
+    if (!robloxRank) {
+
+      throw new Error(
+        "Roblox did not provide a valid TGAR rank.",
+      );
+    }
+
+
+    const rankRoleId =
+      getDiscordRankRoleId(
+        robloxRank,
+      );
+
+
+    if (!rankRoleId) {
+
+      console.warn(
+        "Unsupported TGAR rank:",
+        {
+          robloxUserId:
+            robloxUser.sub,
+
+          robloxRank,
+        },
+      );
+
+
+      return htmlResponse(
+        "Unsupported TGAR Rank",
+        `Your Roblox account is in TGAR with the rank "${robloxRank}", but this verification system currently only supports configured Enlisted ranks. Your Discord account has not been changed.`,
+        false,
+        403,
+      );
+    }
+
+
+    // --------------------------------------------------------
+    // Roblox username
+    // --------------------------------------------------------
+
     const robloxUsername =
       robloxUser.preferred_username
       ?? robloxUser.nickname
@@ -1476,14 +1623,16 @@ async function handleCallback(
           robloxUser.sub,
 
         tgarRole:
-          membership.role?.name
-          ?? "Unknown",
+          robloxRank,
+
+        discordRankRoleId:
+          rankRoleId,
       },
     );
 
 
     // --------------------------------------------------------
-    // Wait 10 seconds before changing Discord account
+    // Wait before changing Discord account
     // --------------------------------------------------------
 
     console.log(
@@ -1508,6 +1657,7 @@ async function handleCallback(
     await updateDiscordRoles(
       state.discord_user_id,
       discordMember,
+      rankRoleId,
     );
 
 
@@ -1542,15 +1692,17 @@ async function handleCallback(
         robloxUsername,
 
         tgarRole:
-          membership.role?.name
-          ?? "Unknown",
+          robloxRank,
+
+        discordRankRoleId:
+          rankRoleId,
       },
     );
 
 
     return htmlResponse(
       "Verification Complete",
-      `Successfully verified as ${robloxUsername}. Your Discord roles and nickname have been updated. You may now return to Discord.`,
+      `Successfully verified as ${robloxUsername} with the TGAR rank ${robloxRank}. Your Discord roles and nickname have been updated. You may now return to Discord.`,
       true,
       200,
     );
