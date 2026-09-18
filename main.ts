@@ -1094,272 +1094,178 @@ async function getDiscordRoles():
 
 
 // ============================================================
-// Add role
+// Discord rate-limit handling
 // ============================================================
 
-async function addDiscordRole(
-  discordUserId: string,
-  roleId: string,
-): Promise<void> {
+async function discordRequestWithRetry(
+  path: string,
+  options: RequestInit = {},
+  maxRetries = 3,
+): Promise<Response> {
 
-  const response =
-    await discordRequest(
-      `/guilds/${
-        DISCORD_GUILD_ID
-      }/members/${
-        discordUserId
-      }/roles/${
-        roleId
-      }`,
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const response = await discordRequest(path, options);
+
+    if (response.status !== 429) {
+      return response;
+    }
+
+    let retryAfterSeconds = 1;
+
+    try {
+      const data = await response.clone().json();
+
+      if (
+        typeof data?.retry_after === "number"
+        && Number.isFinite(data.retry_after)
+      ) {
+        retryAfterSeconds = data.retry_after;
+      }
+    } catch {
+      const retryAfterHeader = response.headers.get("retry-after");
+      const parsedRetryAfter = Number(retryAfterHeader);
+
+      if (
+        Number.isFinite(parsedRetryAfter)
+        && parsedRetryAfter > 0
+      ) {
+        retryAfterSeconds = parsedRetryAfter;
+      }
+    }
+
+    if (attempt >= maxRetries) {
+      return response;
+    }
+
+    const waitMilliseconds =
+      Math.ceil(retryAfterSeconds * 1000) + 250;
+
+    console.warn(
+      "Discord rate limit received. Retrying request:",
       {
-
-        method: "PUT",
+        path,
+        attempt: attempt + 1,
+        retryAfterSeconds,
       },
     );
 
-
-  if (
-    !response.ok
-    &&
-    response.status !== 204
-  ) {
-
-    const errorText =
-      await response.text();
-
-
-    console.error(
-      `Failed to add role ${roleId}:`,
-      response.status,
-      errorText,
-    );
-
-
-    throw new Error(
-      "One or more required Discord roles could not be added.",
-    );
-  }
-}
-
-
-// ============================================================
-// Remove role
-// ============================================================
-
-async function removeDiscordRole(
-  discordUserId: string,
-  roleId: string,
-): Promise<boolean> {
-
-  const response =
-    await discordRequest(
-      `/guilds/${
-        DISCORD_GUILD_ID
-      }/members/${
-        discordUserId
-      }/roles/${
-        roleId
-      }`,
-      {
-
-        method: "DELETE",
-      },
-    );
-
-
-  if (
-    response.ok
-    ||
-    response.status === 204
-  ) {
-
-    return true;
+    await sleep(waitMilliseconds);
   }
 
-
-  const errorText =
-    await response.text();
-
-
-  console.warn(
-    `Could not remove role ${roleId}:`,
-    response.status,
-    errorText,
+  throw new Error(
+    "Discord request retry loop ended unexpectedly.",
   );
-
-
-  return false;
 }
 
 
 // ============================================================
-// Nickname
+// Update Discord member
 // ============================================================
 
-async function setDiscordNickname(
-  discordUserId: string,
-  nickname: string,
-): Promise<void> {
-
-  const safeNickname =
-    nickname.slice(
-      0,
-      32,
-    );
-
-
-  const response =
-    await discordRequest(
-      `/guilds/${
-        DISCORD_GUILD_ID
-      }/members/${
-        discordUserId
-      }`,
-      {
-
-        method: "PATCH",
-
-        body:
-          JSON.stringify(
-            {
-              nick:
-                safeNickname,
-            },
-          ),
-      },
-    );
-
-
-  if (!response.ok) {
-
-    const errorText =
-      await response.text();
-
-
-    console.error(
-      "Nickname update failed:",
-      response.status,
-      errorText,
-    );
-
-
-    throw new Error(
-      "Your Discord nickname could not be updated.",
-    );
-  }
-}
-
-
-// ============================================================
-// Update roles
-// ============================================================
-
-async function updateDiscordRoles(
+async function updateDiscordMember(
   discordUserId: string,
   member: DiscordMember,
   rankRoleId: string,
+  nickname: string,
 ): Promise<void> {
 
-  const guildRoles =
-    await getDiscordRoles();
+  const guildRoles = await getDiscordRoles();
 
-
-  const roleById =
-    new Map(
-      guildRoles.map(
-        (role) => [
-          role.id,
-          role,
-        ],
-      ),
-    );
-
-
-  const desiredRoles =
-    new Set<string>(
-      [
-        ...VERIFIED_ENLISTED_BASE_ROLE_IDS,
-        rankRoleId,
+  const roleById = new Map(
+    guildRoles.map(
+      (role) => [
+        role.id,
+        role,
       ],
-    );
-
-
-  // ----------------------------------------------------------
-  // Remove old removable roles
-  // ----------------------------------------------------------
-
-  for (
-    const currentRoleId
-    of member.roles
-  ) {
-
-    if (
-      desiredRoles.has(
-        currentRoleId,
-      )
-    ) {
-
-      continue;
-    }
-
-
-    const role =
-      roleById.get(
-        currentRoleId,
-      );
-
-
-    if (!role) {
-      continue;
-    }
-
-
-    // Bot/integration managed roles cannot be removed manually.
-    if (role.managed) {
-      continue;
-    }
-
-
-    await removeDiscordRole(
-      discordUserId,
-      currentRoleId,
-    );
-  }
-
-
-  // ----------------------------------------------------------
-  // Add verified base roles
-  // ----------------------------------------------------------
-
-  for (
-    const roleId
-    of VERIFIED_ENLISTED_BASE_ROLE_IDS
-  ) {
-
-    await addDiscordRole(
-      discordUserId,
-      roleId,
-    );
-  }
-
-
-  // ----------------------------------------------------------
-  // Add EXACT matching Enlisted rank role
-  // ----------------------------------------------------------
-
-  await addDiscordRole(
-    discordUserId,
-    rankRoleId,
+    ),
   );
 
+  const desiredRoles = new Set<string>(
+    [
+      ...VERIFIED_ENLISTED_BASE_ROLE_IDS,
+      rankRoleId,
+    ],
+  );
 
-  // ----------------------------------------------------------
-  // Ensure Unverified is removed
-  // ----------------------------------------------------------
+  // Keep only Discord-managed/integration roles from the member's
+  // existing roles. All normal old roles are intentionally cleared.
+  const preservedManagedRoles =
+    member.roles.filter(
+      (currentRoleId) => {
+        const role = roleById.get(currentRoleId);
+        return role?.managed === true;
+      },
+    );
 
-  await removeDiscordRole(
-    discordUserId,
-    UNVERIFIED_ROLE_ID,
+  const finalRoles = Array.from(
+    new Set<string>(
+      [
+        ...preservedManagedRoles,
+        ...desiredRoles,
+      ],
+    ),
+  );
+
+  const safeNickname = nickname.slice(0, 32);
+
+  console.log(
+    "Applying Discord member update:",
+    {
+      discordUserId,
+      preservedManagedRoles,
+      desiredRoles: Array.from(desiredRoles),
+      finalRoles,
+      nickname: safeNickname,
+    },
+  );
+
+  // One Discord PATCH sets the final role list and nickname together.
+  const response = await discordRequestWithRetry(
+    `/guilds/${DISCORD_GUILD_ID}/members/${discordUserId}`,
+    {
+      method: "PATCH",
+      body: JSON.stringify(
+        {
+          roles: finalRoles,
+          nick: safeNickname,
+        },
+      ),
+    },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+
+    console.error(
+      "Discord member update failed:",
+      response.status,
+      errorText,
+    );
+
+    if (response.status === 429) {
+      throw new Error(
+        "Discord continued rate limiting the verification request after retries.",
+      );
+    }
+
+    if (response.status === 403) {
+      throw new Error(
+        "TGAR Core does not have permission to update the required Discord roles or nickname.",
+      );
+    }
+
+    throw new Error(
+      `Discord member update failed with HTTP ${response.status}.`,
+    );
+  }
+
+  console.log(
+    "Discord member update completed.",
+    {
+      discordUserId,
+      roleCount: finalRoles.length,
+      nickname: safeNickname,
+    },
   );
 }
 
@@ -1646,32 +1552,18 @@ async function handleCallback(
 
 
     // --------------------------------------------------------
-    // Roles
+    // Discord roles + nickname
     // --------------------------------------------------------
 
     console.log(
-      "Updating Discord roles...",
+      "Updating Discord roles and nickname...",
     );
 
 
-    await updateDiscordRoles(
+    await updateDiscordMember(
       state.discord_user_id,
       discordMember,
       rankRoleId,
-    );
-
-
-    // --------------------------------------------------------
-    // Nickname
-    // --------------------------------------------------------
-
-    console.log(
-      "Updating Discord nickname...",
-    );
-
-
-    await setDiscordNickname(
-      state.discord_user_id,
       robloxUsername,
     );
 
