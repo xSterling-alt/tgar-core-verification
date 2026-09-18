@@ -1819,12 +1819,50 @@ Deno.serve(
 
 
     // --------------------------------------------------------
+    // Privacy Policy
+    // --------------------------------------------------------
+
+    if (
+      request.method === "GET"
+      &&
+      url.pathname === "/privacy"
+    ) {
+
+      return htmlResponse(
+        "Privacy Policy",
+        "TGAR Core Verification uses Roblox OAuth to identify the Roblox account you choose to authorize and to check that account's TGAR group membership and rank. The service also uses your Discord user ID to apply the appropriate TGAR Discord nickname and roles. TGAR Core does not receive or store your Roblox password. OAuth access is used only to complete the verification request. Technical logs may be retained temporarily for security, troubleshooting, and abuse prevention. By using the verification service, you authorize these checks for the purpose of verifying your TGAR membership. If you have questions about this policy, contact TGAR staff through the TGAR Discord server.",
+        true,
+        200,
+      );
+    }
+
+
+    // --------------------------------------------------------
+    // Terms of Service
+    // --------------------------------------------------------
+
+    if (
+      request.method === "GET"
+      &&
+      url.pathname === "/terms"
+    ) {
+
+      return htmlResponse(
+        "Terms of Service",
+        "TGAR Core Verification is provided for members of the TGAR community to link a Roblox account to a Discord account for membership and rank verification. You must authorize only a Roblox account that you are permitted to use and must not misuse, interfere with, or attempt to circumvent the verification service. Verification may be refused or stopped when the Roblox account is not in TGAR, has an unsupported rank, or when the request is invalid or expired. The service is provided for TGAR community administration and may be changed, suspended, or discontinued when necessary. Roblox and Discord remain subject to their own terms and policies. By using TGAR Core Verification, you agree to these terms.",
+        true,
+        200,
+      );
+    }
+
+
+    // --------------------------------------------------------
     // Homepage
     // --------------------------------------------------------
 
     return htmlResponse(
       "TGAR Core Verification",
-      "This service handles secure Roblox verification for TGAR Core. Verification must be started through /verify in the TGAR Discord server.",
+      "TGAR Core Verification securely links a Roblox account to a Discord account for TGAR membership and rank verification. Verification must be started with /verify in the TGAR Discord server. Privacy Policy: /privacy • Terms of Service: /terms",
       true,
       200,
     );
