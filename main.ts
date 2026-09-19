@@ -197,6 +197,67 @@ function requireEnv(
 
 
 // ============================================================
+// Deno KV — verified account storage
+// ============================================================
+
+const kv = await Deno.openKv();
+
+interface VerifiedUserRecord {
+  discordUserId: string;
+  robloxUserId: string;
+  robloxUsername: string;
+  tgarRank: string;
+  verifiedAt: string;
+  updatedAt: string;
+}
+
+async function saveVerifiedUser(
+  discordUserId: string,
+  robloxUserId: string,
+  robloxUsername: string,
+  tgarRank: string,
+): Promise<void> {
+  const now = new Date().toISOString();
+
+  const existing =
+    await kv.get<VerifiedUserRecord>(
+      ["verified_users", discordUserId],
+    );
+
+  const record: VerifiedUserRecord = {
+    discordUserId,
+    robloxUserId,
+    robloxUsername,
+    tgarRank,
+    verifiedAt:
+      existing.value?.verifiedAt ?? now,
+    updatedAt: now,
+  };
+
+  const result = await kv.set(
+    ["verified_users", discordUserId],
+    record,
+  );
+
+  if (!result.ok) {
+    throw new Error(
+      "Verified account mapping could not be saved.",
+    );
+  }
+
+  console.log(
+    "Verified account mapping saved:",
+    {
+      discordUserId,
+      robloxUserId,
+      robloxUsername,
+      tgarRank,
+    },
+  );
+}
+
+
+// ============================================================
 // HTML response
 // ============================================================
 
@@ -1565,6 +1626,18 @@ async function handleCallback(
       discordMember,
       rankRoleId,
       robloxUsername,
+    );
+
+
+    // --------------------------------------------------------
+    // Persist verified Discord <-> Roblox account mapping
+    // --------------------------------------------------------
+
+    await saveVerifiedUser(
+      state.discord_user_id,
+      robloxUser.sub,
+      robloxUsername,
+      robloxRank,
     );
 
 
