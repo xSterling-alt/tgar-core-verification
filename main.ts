@@ -1545,28 +1545,6 @@ async function handleCallback(
       );
 
 
-    if (!rankRoleId) {
-
-      console.warn(
-        "Unsupported TGAR rank:",
-        {
-          robloxUserId:
-            robloxUser.sub,
-
-          robloxRank,
-        },
-      );
-
-
-      return htmlResponse(
-        "Unsupported TGAR Rank",
-        `Your Roblox account is in TGAR with the rank "${robloxRank}", but this verification system currently only supports configured Enlisted ranks. Your Discord account has not been changed.`,
-        false,
-        403,
-      );
-    }
-
-
     // --------------------------------------------------------
     // Roblox username
     // --------------------------------------------------------
@@ -1581,6 +1559,50 @@ async function handleCallback(
 
       throw new Error(
         "Roblox did not provide a username.",
+      );
+    }
+
+
+    // --------------------------------------------------------
+    // Non-Enlisted TGAR member
+    //
+    // Link and store the account, but do not rank or rename
+    // the Discord member. This allows division autosync to
+    // recognize Officers/HICOM and other TGAR ranks.
+    // --------------------------------------------------------
+
+    if (!rankRoleId) {
+
+      console.log(
+        "Non-Enlisted TGAR account linked:",
+        {
+          discordUserId:
+            state.discord_user_id,
+
+          robloxUserId:
+            robloxUser.sub,
+
+          robloxUsername,
+
+          tgarRole:
+            robloxRank,
+        },
+      );
+
+
+      await saveVerifiedUser(
+        state.discord_user_id,
+        robloxUser.sub,
+        robloxUsername,
+        robloxRank,
+      );
+
+
+      return htmlResponse(
+        "Account Linked",
+        `Successfully linked ${robloxUsername} with the TGAR rank ${robloxRank}. Because this is not a supported Enlisted rank, TGAR Core has not changed your Discord rank or nickname. Your linked account can still be used for division synchronization. You may now return to Discord.`,
+        true,
+        200,
       );
     }
 
@@ -1942,7 +1964,7 @@ Deno.serve(
 
       return htmlResponse(
         "Terms of Service",
-        "TGAR Core Verification is provided for members of the TGAR community to link a Roblox account to a Discord account for membership and rank verification. You must authorize only a Roblox account that you are permitted to use and must not misuse, interfere with, or attempt to circumvent the verification service. Verification may be refused or stopped when the Roblox account is not in TGAR, has an unsupported rank, or when the request is invalid or expired. The service is provided for TGAR community administration and may be changed, suspended, or discontinued when necessary. Roblox and Discord remain subject to their own terms and policies. By using TGAR Core Verification, you agree to these terms.",
+        "TGAR Core Verification is provided for members of the TGAR community to link a Roblox account to a Discord account for membership and rank verification. You must authorize only a Roblox account that you are permitted to use and must not misuse, interfere with, or attempt to circumvent the verification service. Verification may be refused or stopped when the Roblox account is not in TGAR or when the request is invalid or expired. TGAR members with ranks outside the configured Enlisted range may still link their account, but TGAR Core will not automatically apply an Enlisted rank or nickname during verification. The service is provided for TGAR community administration and may be changed, suspended, or discontinued when necessary. Roblox and Discord remain subject to their own terms and policies. By using TGAR Core Verification, you agree to these terms.",
         true,
         200,
       );
