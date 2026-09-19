@@ -28,6 +28,10 @@ const STATE_SECRET = requireEnv(
   "STATE_SECRET",
 );
 
+const SYNC_API_SECRET = requireEnv(
+  "SYNC_API_SECRET",
+);
+
 
 // ------------------------------------------------------------
 // Verification roles
@@ -1715,6 +1719,114 @@ async function handleCallback(
 
 
 // ============================================================
+// Secured sync API
+// ============================================================
+
+function constantTimeEqual(
+  left: string,
+  right: string,
+): boolean {
+  const encoder = new TextEncoder();
+  const leftBytes = encoder.encode(left);
+  const rightBytes = encoder.encode(right);
+
+  const length = Math.max(
+    leftBytes.length,
+    rightBytes.length,
+  );
+
+  let difference =
+    leftBytes.length ^ rightBytes.length;
+
+  for (let index = 0; index < length; index++) {
+    difference |=
+      (leftBytes[index] ?? 0)
+      ^ (rightBytes[index] ?? 0);
+  }
+
+  return difference === 0;
+}
+
+
+function jsonResponse(
+  body: unknown,
+  status = 200,
+): Response {
+  return new Response(
+    JSON.stringify(body),
+    {
+      status,
+      headers: {
+        "content-type":
+          "application/json; charset=utf-8",
+        "cache-control":
+          "no-store",
+      },
+    },
+  );
+}
+
+
+async function handleSyncUsers(
+  request: Request,
+): Promise<Response> {
+  const authorization =
+    request.headers.get("authorization") ?? "";
+
+  const expectedAuthorization =
+    `Bearer ${SYNC_API_SECRET}`;
+
+  if (
+    !constantTimeEqual(
+      authorization,
+      expectedAuthorization,
+    )
+  ) {
+    return jsonResponse(
+      {
+        error: "Unauthorized",
+      },
+      401,
+    );
+  }
+
+  const users: VerifiedUserRecord[] = [];
+
+  const entries =
+    kv.list<VerifiedUserRecord>(
+      {
+        prefix: ["verified_users"],
+      },
+    );
+
+  for await (const entry of entries) {
+    if (
+      entry.value
+      && typeof entry.value.discordUserId === "string"
+      && typeof entry.value.robloxUserId === "string"
+    ) {
+      users.push(entry.value);
+    }
+  }
+
+  console.log(
+    "Authorized sync user list requested:",
+    {
+      count: users.length,
+    },
+  );
+
+  return jsonResponse(
+    {
+      users,
+      count: users.length,
+    },
+    200,
+  );
+}
+
+
+// ============================================================
 // HTTP server
 // ============================================================
 
@@ -1741,6 +1853,22 @@ Deno.serve(
     ) {
 
       return await handleCallback(
+        request,
+      );
+    }
+
+
+    // --------------------------------------------------------
+    // Secured verified-user sync API
+    // --------------------------------------------------------
+
+    if (
+      request.method === "GET"
+      &&
+      url.pathname === "/sync/users"
+    ) {
+
+      return await handleSyncUsers(
         request,
       );
     }
