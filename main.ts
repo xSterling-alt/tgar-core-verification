@@ -2015,6 +2015,39 @@ async function handlePendingArrests(request: Request): Promise<Response> {
   return jsonResponse({ arrests, count: arrests.length }, 200);
 }
 
+async function handleAwaitingProofArrests(request: Request): Promise<Response> {
+  if (!isSyncAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
+
+  const now = Date.now();
+  const arrests: PendingArrestRecord[] = [];
+
+  for await (const entry of kv.list<PendingArrestRecord>({ prefix: ["pending_arrests"] })) {
+    const arrest = entry.value;
+
+    if (!arrest) continue;
+    if (arrest.status !== "awaiting_proof") continue;
+    if (Date.parse(arrest.expiresAt) <= now) continue;
+
+    // A usable awaiting-proof record must point back to the exact
+    // Discord DM message that the jailer was instructed to reply to.
+    if (!arrest.proofRequestDiscordMessageId) continue;
+    if (!arrest.proofRequestDiscordChannelId) continue;
+
+    arrests.push(arrest);
+  }
+
+  arrests.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+
+  return jsonResponse(
+    {
+      arrests,
+      count: arrests.length,
+    },
+    200,
+  );
+}
+
+
 async function handleClaimArrest(request: Request, arrestId: string): Promise<Response> {
   if (!isSyncAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
 
@@ -2245,6 +2278,10 @@ Deno.serve(
 
     if (request.method === "GET" && url.pathname === "/arrests/pending") {
       return await handlePendingArrests(request);
+    }
+
+    if (request.method === "GET" && url.pathname === "/arrests/awaiting-proof") {
+      return await handleAwaitingProofArrests(request);
     }
 
     if (request.method === "GET" && url.pathname === "/arrests/expired") {
