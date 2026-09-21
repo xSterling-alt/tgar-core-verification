@@ -32,6 +32,10 @@ const SYNC_API_SECRET = requireEnv(
   "SYNC_API_SECRET",
 );
 
+const ARREST_API_SECRET = requireEnv(
+  "ARREST_API_SECRET",
+);
+
 
 // ------------------------------------------------------------
 // Verification roles
@@ -1849,6 +1853,92 @@ async function handleSyncUsers(
 
 
 // ============================================================
+// Secured Roblox arrest API
+// ============================================================
+
+interface PendingArrestRecord {
+  arrestId: string;
+  jailerRobloxUserId: string;
+  jailerUsername: string;
+  offenderRobloxUserId: string;
+  offenderUsername: string;
+  reason: string;
+  duration: number;
+  morphDivision: string;
+  morphName: string;
+  route: "CG" | "RI" | "GAR";
+  status: "pending";
+  createdAt: string;
+  expiresAt: string;
+}
+
+function arrestString(value: unknown, name: string, max: number): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required.`);
+  return value.trim().slice(0, max);
+}
+
+function arrestUserId(value: unknown, name: string): string {
+  const result = typeof value === "number" ? String(Math.trunc(value)) : typeof value === "string" ? value.trim() : "";
+  if (!/^\d+$/.test(result) || result === "0") throw new Error(`${name} is invalid.`);
+  return result;
+}
+
+function getArrestRoute(morphDivision: string): "CG" | "RI" | "GAR" {
+  const division = morphDivision.trim().toLowerCase();
+  if (division === "coruscant guard") return "CG";
+  if (division === "republic intelligence") return "RI";
+  return "GAR";
+}
+
+async function handleCreateArrest(request: Request): Promise<Response> {
+  const authorization = request.headers.get("authorization") ?? "";
+  if (!constantTimeEqual(authorization, `Bearer ${ARREST_API_SECRET}`)) {
+    return jsonResponse({ error: "Unauthorized" }, 401);
+  }
+
+  let body: unknown;
+  try { body = await request.json(); }
+  catch { return jsonResponse({ error: "Invalid JSON body." }, 400); }
+
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return jsonResponse({ error: "Invalid arrest payload." }, 400);
+  }
+
+  try {
+    const payload = body as Record<string, unknown>;
+    const jailerRobloxUserId = arrestUserId(payload.jailerRobloxUserId, "jailerRobloxUserId");
+    const jailerUsername = arrestString(payload.jailerUsername, "jailerUsername", 64);
+    const offenderRobloxUserId = arrestUserId(payload.offenderRobloxUserId, "offenderRobloxUserId");
+    const offenderUsername = arrestString(payload.offenderUsername, "offenderUsername", 64);
+    const reason = arrestString(payload.reason, "reason", 500);
+    const morphDivision = arrestString(payload.morphDivision, "morphDivision", 100);
+    const morphName = typeof payload.morphName === "string" ? payload.morphName.trim().slice(0, 100) : "";
+    const durationNumber = Number(payload.duration);
+    if (!Number.isFinite(durationNumber) || durationNumber < 0 || durationNumber > 86400) throw new Error("duration is invalid.");
+
+    const route = getArrestRoute(morphDivision);
+    const arrestId = crypto.randomUUID();
+    const created = new Date();
+    const expires = new Date(created.getTime() + 30 * 60 * 1000);
+    const record: PendingArrestRecord = {
+      arrestId, jailerRobloxUserId, jailerUsername, offenderRobloxUserId, offenderUsername,
+      reason, duration: Math.floor(durationNumber), morphDivision, morphName, route, status: "pending",
+      createdAt: created.toISOString(), expiresAt: expires.toISOString(),
+    };
+
+    const result = await kv.set(["pending_arrests", arrestId], record);
+    if (!result.ok) throw new Error("Pending arrest could not be saved.");
+    console.log("Pending arrest received from Roblox:", { arrestId, jailerRobloxUserId, offenderRobloxUserId, route, morphDivision, morphName });
+    return jsonResponse({ ok: true, arrestId, route, expiresAt: record.expiresAt }, 201);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Invalid arrest payload.";
+    console.warn("Rejected arrest payload:", message);
+    return jsonResponse({ error: message }, 400);
+  }
+}
+
+
+// ============================================================
 // HTTP server
 // ============================================================
 
@@ -1893,6 +1983,19 @@ Deno.serve(
       return await handleSyncUsers(
         request,
       );
+    }
+
+
+    // --------------------------------------------------------
+    // Secured Roblox arrest API
+    // --------------------------------------------------------
+
+    if (
+      request.method === "POST"
+      &&
+      url.pathname === "/arrests"
+    ) {
+      return await handleCreateArrest(request);
     }
 
 
