@@ -1867,17 +1867,36 @@ interface PendingArrestRecord {
   morphDivision: string;
   morphName: string;
   route: "CG" | "RI" | "GAR";
-  status: "pending" | "claimed" | "dispatched";
+  status: "pending" | "claimed" | "awaiting_proof" | "completed" | "expired";
   createdAt: string;
   expiresAt: string;
   claimedAt?: string;
   claimExpiresAt?: string;
   dispatchedAt?: string;
+  proofRequestDiscordMessageId?: string;
+  proofRequestDiscordChannelId?: string;
+  completedAt?: string;
+  logDiscordMessageId?: string;
+  logDiscordChannelId?: string;
+  logMessageUrl?: string;
+  expiredAt?: string;
+  expirationAlertClaimedAt?: string;
+  expirationAlertClaimExpiresAt?: string;
+  expirationAlertedAt?: string;
 }
+
+const ARREST_CLAIM_LEASE_MS = 2 * 60 * 1000;
+const EXPIRATION_ALERT_CLAIM_LEASE_MS = 2 * 60 * 1000;
 
 function arrestString(value: unknown, name: string, max: number): string {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required.`);
   return value.trim().slice(0, max);
+}
+
+function optionalArrestString(value: unknown, max: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const result = value.trim().slice(0, max);
+  return result || undefined;
 }
 
 function arrestUserId(value: unknown, name: string): string {
@@ -1903,6 +1922,31 @@ function getArrestRoute(morphDivision: string): "CG" | "RI" | "GAR" {
   if (division === "coruscant guard") return "CG";
   if (division === "republic intelligence") return "RI";
   return "GAR";
+}
+
+function isSyncAuthorized(request: Request): boolean {
+  const authorization = request.headers.get("authorization") ?? "";
+  return constantTimeEqual(authorization, `Bearer ${SYNC_API_SECRET}`);
+}
+
+function arrestIdFromPath(pathname: string, action: string): string | null {
+  const match = pathname.match(new RegExp(`^/arrests/([^/]+)/${action}$`));
+  if (!match) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return null;
+  }
+}
+
+async function readOptionalJsonObject(request: Request): Promise<Record<string, unknown>> {
+  const text = await request.text();
+  if (!text.trim()) return {};
+  const parsed = JSON.parse(text);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("Invalid JSON body.");
+  }
+  return parsed as Record<string, unknown>;
 }
 
 async function handleCreateArrest(request: Request): Promise<Response> {
@@ -1952,243 +1996,185 @@ async function handleCreateArrest(request: Request): Promise<Response> {
   }
 }
 
-
-
-// ============================================================
-// Secured Discord arrest queue API
-// ============================================================
-//
-// TGAR Core on Lunafy authenticates these endpoints with the
-// existing SYNC_API_SECRET. Roblox continues to use only
-// ARREST_API_SECRET for POST /arrests.
-//
-// Flow:
-//   GET  /arrests/pending
-//   POST /arrests/{arrestId}/claim
-//   send Discord proof-request DM
-//   POST /arrests/{arrestId}/dispatch
-//
-// Claims are two-minute leases. If the bot crashes before it
-// sends the DM, the arrest automatically becomes claimable again.
-// ============================================================
-
-const ARREST_CLAIM_LEASE_MS = 2 * 60 * 1000;
-
-function authorizedSyncRequest(request: Request): boolean {
-  const authorization = request.headers.get("authorization") ?? "";
-  return constantTimeEqual(
-    authorization,
-    `Bearer ${SYNC_API_SECRET}`,
-  );
-}
-
-function arrestIsExpired(
-  record: PendingArrestRecord,
-  now = Date.now(),
-): boolean {
-  const expiresAt = Date.parse(record.expiresAt);
-  return !Number.isFinite(expiresAt) || expiresAt <= now;
-}
-
-function arrestClaimIsAvailable(
-  record: PendingArrestRecord,
-  now = Date.now(),
-): boolean {
-  if (record.status === "pending") return true;
-  if (record.status !== "claimed") return false;
-
-  const claimExpiresAt = record.claimExpiresAt
-    ? Date.parse(record.claimExpiresAt)
-    : Number.NaN;
-
-  return !Number.isFinite(claimExpiresAt) || claimExpiresAt <= now;
-}
-
-async function handlePendingArrests(
-  request: Request,
-): Promise<Response> {
-  if (!authorizedSyncRequest(request)) {
-    return jsonResponse({ error: "Unauthorized" }, 401);
-  }
+async function handlePendingArrests(request: Request): Promise<Response> {
+  if (!isSyncAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
 
   const now = Date.now();
   const arrests: PendingArrestRecord[] = [];
-  const entries = kv.list<PendingArrestRecord>({
-    prefix: ["pending_arrests"],
-  });
+  for await (const entry of kv.list<PendingArrestRecord>({ prefix: ["pending_arrests"] })) {
+    const arrest = entry.value;
+    if (!arrest || Date.parse(arrest.expiresAt) <= now) continue;
 
-  for await (const entry of entries) {
-    const record = entry.value;
+    const claimExpired = arrest.status === "claimed" &&
+      (!arrest.claimExpiresAt || Date.parse(arrest.claimExpiresAt) <= now);
 
-    if (
-      !record
-      || typeof record.arrestId !== "string"
-      || typeof record.expiresAt !== "string"
-    ) {
-      continue;
-    }
-
-    if (arrestIsExpired(record, now)) continue;
-    if (!arrestClaimIsAvailable(record, now)) continue;
-
-    arrests.push(record);
+    if (arrest.status === "pending" || claimExpired) arrests.push(arrest);
   }
 
-  arrests.sort(
-    (left, right) =>
-      Date.parse(left.createdAt) - Date.parse(right.createdAt),
-  );
-
-  console.log("Authorized pending arrest list requested:", {
-    count: arrests.length,
-  });
-
-  return jsonResponse(
-    {
-      arrests,
-      count: arrests.length,
-    },
-    200,
-  );
+  arrests.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+  return jsonResponse({ arrests, count: arrests.length }, 200);
 }
 
-async function handleClaimArrest(
-  request: Request,
-  arrestId: string,
-): Promise<Response> {
-  if (!authorizedSyncRequest(request)) {
-    return jsonResponse({ error: "Unauthorized" }, 401);
-  }
+async function handleClaimArrest(request: Request, arrestId: string): Promise<Response> {
+  if (!isSyncAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
 
-  const key = ["pending_arrests", arrestId];
+  const key: Deno.KvKey = ["pending_arrests", arrestId];
   const existing = await kv.get<PendingArrestRecord>(key);
-  const record = existing.value;
+  if (!existing.value) return jsonResponse({ error: "Arrest not found." }, 404);
 
-  if (!record) {
-    return jsonResponse({ error: "Arrest not found." }, 404);
+  const now = new Date();
+  const arrest = existing.value;
+  if (Date.parse(arrest.expiresAt) <= now.getTime()) return jsonResponse({ error: "Arrest has expired." }, 410);
+  if (arrest.status === "awaiting_proof" || arrest.status === "completed" || arrest.status === "expired") {
+    return jsonResponse({ error: `Arrest is already ${arrest.status}.` }, 409);
   }
+  if (arrest.status === "claimed" && arrest.claimExpiresAt && Date.parse(arrest.claimExpiresAt) > now.getTime()) {
+    return jsonResponse({ error: "Arrest is already claimed." }, 409);
+  }
+
+  const updated: PendingArrestRecord = {
+    ...arrest,
+    status: "claimed",
+    claimedAt: now.toISOString(),
+    claimExpiresAt: new Date(now.getTime() + ARREST_CLAIM_LEASE_MS).toISOString(),
+  };
+
+  const committed = await kv.atomic().check(existing).set(key, updated).commit();
+  if (!committed.ok) return jsonResponse({ error: "Arrest was claimed by another worker." }, 409);
+  return jsonResponse({ ok: true, arrest: updated }, 200);
+}
+
+async function handleDispatchArrest(request: Request, arrestId: string): Promise<Response> {
+  if (!isSyncAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
+
+  let payload: Record<string, unknown>;
+  try { payload = await readOptionalJsonObject(request); }
+  catch { return jsonResponse({ error: "Invalid JSON body." }, 400); }
+
+  const key: Deno.KvKey = ["pending_arrests", arrestId];
+  const existing = await kv.get<PendingArrestRecord>(key);
+  if (!existing.value) return jsonResponse({ error: "Arrest not found." }, 404);
+
+  const arrest = existing.value;
+  if (arrest.status === "awaiting_proof") return jsonResponse({ ok: true, arrest }, 200);
+  if (arrest.status !== "claimed") return jsonResponse({ error: `Arrest cannot be dispatched from status ${arrest.status}.` }, 409);
+
+  const now = new Date();
+  const updated: PendingArrestRecord = {
+    ...arrest,
+    status: "awaiting_proof",
+    dispatchedAt: now.toISOString(),
+    claimExpiresAt: undefined,
+    proofRequestDiscordMessageId: optionalArrestString(payload.proofRequestDiscordMessageId, 32),
+    proofRequestDiscordChannelId: optionalArrestString(payload.proofRequestDiscordChannelId, 32),
+  };
+
+  const committed = await kv.atomic().check(existing).set(key, updated).commit();
+  if (!committed.ok) return jsonResponse({ error: "Arrest changed before dispatch could be saved." }, 409);
+  return jsonResponse({ ok: true, arrest: updated }, 200);
+}
+
+async function handleCompleteArrest(request: Request, arrestId: string): Promise<Response> {
+  if (!isSyncAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
+
+  let payload: Record<string, unknown>;
+  try { payload = await readOptionalJsonObject(request); }
+  catch { return jsonResponse({ error: "Invalid JSON body." }, 400); }
+
+  const key: Deno.KvKey = ["pending_arrests", arrestId];
+  const existing = await kv.get<PendingArrestRecord>(key);
+  if (!existing.value) return jsonResponse({ error: "Arrest not found." }, 404);
+
+  const arrest = existing.value;
+  if (arrest.status === "completed") return jsonResponse({ ok: true, arrest }, 200);
+  if (arrest.status !== "awaiting_proof") return jsonResponse({ error: `Arrest cannot be completed from status ${arrest.status}.` }, 409);
+  if (Date.parse(arrest.expiresAt) <= Date.now()) return jsonResponse({ error: "Proof deadline has expired." }, 410);
+
+  const updated: PendingArrestRecord = {
+    ...arrest,
+    status: "completed",
+    completedAt: new Date().toISOString(),
+    logDiscordMessageId: optionalArrestString(payload.logDiscordMessageId, 32),
+    logDiscordChannelId: optionalArrestString(payload.logDiscordChannelId, 32),
+    logMessageUrl: optionalArrestString(payload.logMessageUrl, 500),
+  };
+
+  const committed = await kv.atomic().check(existing).set(key, updated).commit();
+  if (!committed.ok) return jsonResponse({ error: "Arrest changed before completion could be saved." }, 409);
+  return jsonResponse({ ok: true, arrest: updated }, 200);
+}
+
+async function handleExpiredArrests(request: Request): Promise<Response> {
+  if (!isSyncAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
 
   const now = Date.now();
+  const arrests: PendingArrestRecord[] = [];
+  for await (const entry of kv.list<PendingArrestRecord>({ prefix: ["pending_arrests"] })) {
+    const arrest = entry.value;
+    // Only arrests whose proof request was actually dispatched are
+    // eligible for a missed-proof alert. This avoids blaming a
+    // jailer if Discord never received the original proof request.
+    if (!arrest || arrest.status !== "awaiting_proof" || arrest.expirationAlertedAt) continue;
+    if (Date.parse(arrest.expiresAt) > now) continue;
 
-  if (arrestIsExpired(record, now)) {
-    return jsonResponse({ error: "Arrest has expired." }, 410);
+    const alertClaimAvailable = !arrest.expirationAlertClaimExpiresAt ||
+      Date.parse(arrest.expirationAlertClaimExpiresAt) <= now;
+    if (alertClaimAvailable) arrests.push(arrest);
   }
 
-  if (record.status === "dispatched") {
-    return jsonResponse(
-      { error: "Arrest has already been dispatched." },
-      409,
-    );
-  }
-
-  if (!arrestClaimIsAvailable(record, now)) {
-    return jsonResponse(
-      { error: "Arrest is already claimed." },
-      409,
-    );
-  }
-
-  const claimedRecord: PendingArrestRecord = {
-    ...record,
-    status: "claimed",
-    claimedAt: new Date(now).toISOString(),
-    claimExpiresAt: new Date(
-      now + ARREST_CLAIM_LEASE_MS,
-    ).toISOString(),
-  };
-
-  const result = await kv.atomic()
-    .check(existing)
-    .set(key, claimedRecord)
-    .commit();
-
-  if (!result.ok) {
-    return jsonResponse(
-      { error: "Arrest was claimed by another worker." },
-      409,
-    );
-  }
-
-  console.log("Pending arrest claimed by Discord bot:", {
-    arrestId,
-    claimExpiresAt: claimedRecord.claimExpiresAt,
-  });
-
-  return jsonResponse(
-    {
-      ok: true,
-      arrest: claimedRecord,
-    },
-    200,
-  );
+  arrests.sort((a, b) => Date.parse(a.expiresAt) - Date.parse(b.expiresAt));
+  return jsonResponse({ arrests, count: arrests.length }, 200);
 }
 
-async function handleDispatchArrest(
-  request: Request,
-  arrestId: string,
-): Promise<Response> {
-  if (!authorizedSyncRequest(request)) {
-    return jsonResponse({ error: "Unauthorized" }, 401);
-  }
+async function handleClaimExpirationAlert(request: Request, arrestId: string): Promise<Response> {
+  if (!isSyncAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
 
-  const key = ["pending_arrests", arrestId];
+  const key: Deno.KvKey = ["pending_arrests", arrestId];
   const existing = await kv.get<PendingArrestRecord>(key);
-  const record = existing.value;
+  if (!existing.value) return jsonResponse({ error: "Arrest not found." }, 404);
 
-  if (!record) {
-    return jsonResponse({ error: "Arrest not found." }, 404);
+  const arrest = existing.value;
+  const now = new Date();
+  if (arrest.status === "completed") return jsonResponse({ error: "Arrest was completed." }, 409);
+  if (Date.parse(arrest.expiresAt) > now.getTime()) return jsonResponse({ error: "Arrest has not expired yet." }, 409);
+  if (arrest.expirationAlertedAt) return jsonResponse({ error: "Expiration alert was already sent." }, 409);
+  if (arrest.expirationAlertClaimExpiresAt && Date.parse(arrest.expirationAlertClaimExpiresAt) > now.getTime()) {
+    return jsonResponse({ error: "Expiration alert is already claimed." }, 409);
   }
 
-  if (arrestIsExpired(record)) {
-    return jsonResponse({ error: "Arrest has expired." }, 410);
-  }
-
-  if (record.status === "dispatched") {
-    return jsonResponse(
-      {
-        ok: true,
-        arrest: record,
-      },
-      200,
-    );
-  }
-
-  if (record.status !== "claimed") {
-    return jsonResponse(
-      { error: "Arrest must be claimed before dispatch." },
-      409,
-    );
-  }
-
-  const dispatchedRecord: PendingArrestRecord = {
-    ...record,
-    status: "dispatched",
-    dispatchedAt: new Date().toISOString(),
+  const updated: PendingArrestRecord = {
+    ...arrest,
+    status: "expired",
+    expiredAt: arrest.expiredAt ?? now.toISOString(),
+    expirationAlertClaimedAt: now.toISOString(),
+    expirationAlertClaimExpiresAt: new Date(now.getTime() + EXPIRATION_ALERT_CLAIM_LEASE_MS).toISOString(),
   };
 
-  const result = await kv.atomic()
-    .check(existing)
-    .set(key, dispatchedRecord)
-    .commit();
+  const committed = await kv.atomic().check(existing).set(key, updated).commit();
+  if (!committed.ok) return jsonResponse({ error: "Expiration alert was claimed by another worker." }, 409);
+  return jsonResponse({ ok: true, arrest: updated }, 200);
+}
 
-  if (!result.ok) {
-    return jsonResponse(
-      { error: "Arrest changed before it could be dispatched." },
-      409,
-    );
-  }
+async function handleMarkExpirationAlerted(request: Request, arrestId: string): Promise<Response> {
+  if (!isSyncAuthorized(request)) return jsonResponse({ error: "Unauthorized" }, 401);
 
-  console.log("Arrest marked as dispatched:", {
-    arrestId,
-  });
+  const key: Deno.KvKey = ["pending_arrests", arrestId];
+  const existing = await kv.get<PendingArrestRecord>(key);
+  if (!existing.value) return jsonResponse({ error: "Arrest not found." }, 404);
 
-  return jsonResponse(
-    {
-      ok: true,
-      arrest: dispatchedRecord,
-    },
-    200,
-  );
+  const arrest = existing.value;
+  if (arrest.expirationAlertedAt) return jsonResponse({ ok: true, arrest }, 200);
+  if (arrest.status !== "expired") return jsonResponse({ error: "Arrest is not in expired state." }, 409);
+
+  const updated: PendingArrestRecord = {
+    ...arrest,
+    expirationAlertedAt: new Date().toISOString(),
+    expirationAlertClaimExpiresAt: undefined,
+  };
+
+  const committed = await kv.atomic().check(existing).set(key, updated).commit();
+  if (!committed.ok) return jsonResponse({ error: "Arrest changed before alert status could be saved." }, 409);
+  return jsonResponse({ ok: true, arrest: updated }, 200);
 }
 
 
@@ -2257,42 +2243,37 @@ Deno.serve(
     // Secured Discord arrest queue API
     // --------------------------------------------------------
 
-    if (
-      request.method === "GET"
-      &&
-      url.pathname === "/arrests/pending"
-    ) {
+    if (request.method === "GET" && url.pathname === "/arrests/pending") {
       return await handlePendingArrests(request);
     }
 
-
-    const arrestClaimMatch =
-      url.pathname.match(/^\/arrests\/([^/]+)\/claim$/);
-
-    if (
-      request.method === "POST"
-      &&
-      arrestClaimMatch
-    ) {
-      return await handleClaimArrest(
-        request,
-        decodeURIComponent(arrestClaimMatch[1]),
-      );
+    if (request.method === "GET" && url.pathname === "/arrests/expired") {
+      return await handleExpiredArrests(request);
     }
 
+    const claimArrestId = arrestIdFromPath(url.pathname, "claim");
+    if (request.method === "POST" && claimArrestId) {
+      return await handleClaimArrest(request, claimArrestId);
+    }
 
-    const arrestDispatchMatch =
-      url.pathname.match(/^\/arrests\/([^/]+)\/dispatch$/);
+    const dispatchArrestId = arrestIdFromPath(url.pathname, "dispatch");
+    if (request.method === "POST" && dispatchArrestId) {
+      return await handleDispatchArrest(request, dispatchArrestId);
+    }
 
-    if (
-      request.method === "POST"
-      &&
-      arrestDispatchMatch
-    ) {
-      return await handleDispatchArrest(
-        request,
-        decodeURIComponent(arrestDispatchMatch[1]),
-      );
+    const completeArrestId = arrestIdFromPath(url.pathname, "complete");
+    if (request.method === "POST" && completeArrestId) {
+      return await handleCompleteArrest(request, completeArrestId);
+    }
+
+    const claimExpirationId = arrestIdFromPath(url.pathname, "expiration-alert/claim");
+    if (request.method === "POST" && claimExpirationId) {
+      return await handleClaimExpirationAlert(request, claimExpirationId);
+    }
+
+    const markExpirationId = arrestIdFromPath(url.pathname, "expiration-alert/sent");
+    if (request.method === "POST" && markExpirationId) {
+      return await handleMarkExpirationAlerted(request, markExpirationId);
     }
 
 
