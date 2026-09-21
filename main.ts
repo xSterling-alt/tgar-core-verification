@@ -1878,8 +1878,20 @@ function arrestString(value: unknown, name: string, max: number): string {
 }
 
 function arrestUserId(value: unknown, name: string): string {
-  const result = typeof value === "number" ? String(Math.trunc(value)) : typeof value === "string" ? value.trim() : "";
-  if (!/^\d+$/.test(result) || result === "0") throw new Error(`${name} is invalid.`);
+  const result =
+    typeof value === "number"
+      ? String(Math.trunc(value))
+      : typeof value === "string"
+        ? value.trim()
+        : "";
+
+  // Real Roblox user IDs are positive integers.
+  // Roblox Studio's multi-client test players use negative IDs
+  // such as -1 and -2, so allow those for development/testing.
+  if (!/^-?\d+$/.test(result) || result === "0") {
+    throw new Error(`${name} is invalid.`);
+  }
+
   return result;
 }
 
