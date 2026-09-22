@@ -1978,7 +1978,7 @@ async function handleCreateArrest(request: Request): Promise<Response> {
     const route = getArrestRoute(morphDivision);
     const arrestId = crypto.randomUUID();
     const created = new Date();
-    const expires = new Date(created.getTime() + 1 * 60 * 1000);
+    const expires = new Date(created.getTime() + 30 * 60 * 1000);
     const record: PendingArrestRecord = {
       arrestId, jailerRobloxUserId, jailerUsername, offenderRobloxUserId, offenderUsername,
       reason, duration: Math.floor(durationNumber), morphDivision, morphName, route, status: "pending",
