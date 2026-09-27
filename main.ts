@@ -20,6 +20,15 @@ const VERIFICATION_CHANNEL_ID = requireEnv(
   "VERIFICATION_CHANNEL_ID",
 );
 
+const BOT_COMMANDS_CHANNEL_ID = requireEnv(
+  "BOT_COMMANDS_CHANNEL_ID",
+);
+
+const ALLOWED_VERIFICATION_CHANNEL_IDS = new Set([
+  VERIFICATION_CHANNEL_ID,
+  BOT_COMMANDS_CHANNEL_ID,
+]);
+
 const UNVERIFIED_ROLE_ID = requireEnv(
   "UNVERIFIED_ROLE_ID",
 );
@@ -663,8 +672,7 @@ async function verifyState(
 
 
   if (
-    state.channel_id
-      !== VERIFICATION_CHANNEL_ID
+    !ALLOWED_VERIFICATION_CHANNEL_IDS.has(state.channel_id)
   ) {
 
     return null;
@@ -1255,6 +1263,8 @@ async function updateDiscordMember(
       rankRoleId,
     ],
   );
+  // Never retain Unverified when applying successful Enlisted verification.
+  desiredRoles.delete(UNVERIFIED_ROLE_ID);
 
   // Keep only Discord-managed/integration roles from the member's
   // existing roles. All normal old roles are intentionally cleared.
@@ -1269,7 +1279,7 @@ async function updateDiscordMember(
   const finalRoles = Array.from(
     new Set<string>(
       [
-        ...preservedManagedRoles,
+        ...preservedManagedRoles.filter((roleId) => roleId !== UNVERIFIED_ROLE_ID),
         ...desiredRoles,
       ],
     ),
@@ -1336,6 +1346,28 @@ async function updateDiscordMember(
       nickname: safeNickname,
     },
   );
+}
+
+
+// ============================================================
+// Remove Unverified after successful account linking
+// ============================================================
+
+async function removeUnverifiedRole(
+  discordUserId: string,
+): Promise<void> {
+  const response = await discordRequestWithRetry(
+    `/guilds/${DISCORD_GUILD_ID}/members/${discordUserId}/roles/${UNVERIFIED_ROLE_ID}`,
+    { method: "DELETE" },
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error("Could not remove Unverified role:", response.status, errorText);
+    throw new Error("The account was linked, but the Unverified role could not be removed.");
+  }
+
+  console.log("Unverified role removed:", { discordUserId });
 }
 
 
@@ -1593,6 +1625,10 @@ async function handleCallback(
         },
       );
 
+
+      // Non-Enlisted ranks keep all their existing Discord roles and nickname.
+      // Only remove Unverified after Roblox membership and rank were validated.
+      await removeUnverifiedRole(state.discord_user_id);
 
       await saveVerifiedUser(
         state.discord_user_id,
